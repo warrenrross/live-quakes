@@ -1,55 +1,41 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Quake Watch</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>live-quakes — real-time USGS earthquake map</title>
+  <meta name="description" content="A modern Leaflet map of the last 30 days of USGS earthquakes, with a timeline scrubber and tectonic-plate overlay." />
 
-  <!-- v1.5.1 Leaflet CSS  -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.5.1/dist/leaflet.css"
-  integrity="sha512-xwE/Az9zrjBIphAcBb3F6JVqxf46+CDLwfLMHloNu6KEQCAWi6HcDUbeOfBIptF7tcCzusKFjFw2yuvEpDL9wQ=="
-  crossorigin=""/>
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 
-  <!-- v1.4.0 Leaflet JS -->
-  <script src="https://unpkg.com/leaflet@1.4.0/dist/leaflet.js"
-          integrity="sha512-QVftwZFqvtRNi0ZyCtsznlKSWOStnDORoefr1enyq5mVL4tmKB3S/EnC3rRJcxCPavG10IcrVGSmPh6Qw5lwrg=="
-          crossorigin=""></script>
+  <!-- Leaflet.timeline plugin (bundled locally) -->
+  <link rel="stylesheet" href="static/css/leaflet.timeline.css" />
 
-  <!-- v1.2.1 Leaflet.timeline CSS -->
-  <link rel="stylesheet" type="text/css" href="static/css/leaflet.timeline.css">
-
-  <!-- d3 JS -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/5.9.2/d3.min.js"></script>
-
-  <!-- Our CSS -->
-  <link rel="stylesheet" type="text/css" href="static/css/style.css">
-
+  <!-- Our styles -->
+  <link rel="stylesheet" href="static/css/style.css" />
 </head>
 <body>
+  <header class="site-header">
+    <div class="brand">
+      <span class="dot"></span>
+      <strong>live-quakes</strong>
+      <span class="subtitle">last 30 days · M ≥ 2.5 · USGS</span>
+    </div>
+    <a class="src" href="https://github.com/warrenrross/live-quakes" target="_blank" rel="noopener">Source ↗</a>
+  </header>
 
-  <!-- The div that holds our map -->
   <div id="map-id"></div>
 
-  <!-- d3 Version 5 -->
-  <script src="https://d3js.org/d3.v5.min.js"></script>
+  <!-- Leaflet.timeline plugin scripts -->
+  <script src="static/plugins/leaflet/timeline/IntervalTree.js"></script>
+  <script src="static/plugins/leaflet/timeline/Timeline.js"></script>
+  <script src="static/plugins/leaflet/timeline/TimelineSliderControl.js"></script>
 
-  <!-- v1.5.1 Leaflet JavaScript -->
-  <script src="https://unpkg.com/leaflet@1.5.1/dist/leaflet.js"
-  integrity="sha512-GffPMF3RvMeYyc1LWMHtK8EbPv0iNZ8/oTtHPx9/cc2ILxQ+u905qIwdpULaqDkyBKgOaB57QTMg7ztg8Jm2Og=="
-  crossorigin=""></script>
-
-  <!-- v1.2.1 Leaflet.timeline & v0.3.2 diesal JavaScript. -->
-  <!-- Place IntervalTree.js before the Timeline JavaScripts. Timeline is a Leaflet Plugin.       -->
-  <!-- IntervalTree.js (https://github.com/skeate/diesal/tree/master/src/ds) is used by Timeline. -->
-  <script type="text/javascript" src="static/plugins/leaflet/timeline/IntervalTree.js"></script>
-  <script type="text/javascript" src="static/plugins/leaflet/timeline/Timeline.js"></script>
-  <script type="text/javascript" src="static/plugins/leaflet/timeline/TimelineSliderControl.js"></script>
-
-  <!-- API Key -->
-  <script type="text/javascript" src="static/js/config.js"></script>
-
-  <!-- JavaScript -->
-  <script type="text/javascript" src="static/js/logic.js"></script>
-
+  <!-- App -->
+  <script src="static/js/logic.js"></script>
 </body>
-
 </html>
