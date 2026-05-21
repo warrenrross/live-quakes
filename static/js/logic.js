@@ -169,14 +169,33 @@ function buildQuakeLayer(geojson) {
   });
 }
 
-function buildTimelineLayer(geojson) {
+/**
+ * Build a Leaflet.timeline layer with one of two interval strategies:
+ *
+ *   - "window":     each quake is visible for 24h starting at its event time,
+ *                   then disappears. Reads as a moving slice through the month.
+ *   - "cumulative": each quake appears at its event time and stays visible
+ *                   until the end of the data. Reads as the map gradually
+ *                   filling in as the month plays out.
+ */
+function buildTimelineLayer(geojson, mode = "window") {
   if (typeof L.Timeline !== "function") return null;
 
+  const ONE_DAY = 86400000;
+  // Last event time in the feed (used as the "keep forever" end-point).
+  const maxTime = geojson.features.reduce(
+    (acc, f) => Math.max(acc, f.properties.time || 0),
+    0
+  );
+  const cumulativeEnd = maxTime + ONE_DAY;
+
+  const getInterval =
+    mode === "cumulative"
+      ? (q) => ({ start: q.properties.time, end: cumulativeEnd })
+      : (q) => ({ start: q.properties.time, end: q.properties.time + ONE_DAY });
+
   return new L.Timeline(geojson, {
-    getInterval: (q) => ({
-      start: q.properties.time,
-      end: q.properties.time + 86400000, // visible for 24 h after the event
-    }),
+    getInterval,
     pointToLayer: (feature, latlng) => {
       const mag = feature.properties.mag || 0;
       return L.circleMarker(latlng, {
@@ -216,13 +235,22 @@ function buildPlatesLayer(geojson) {
   const { map, baseLayers } = buildMap();
   buildLegend().addTo(map);
 
-  // Earthquakes
+  // Earthquakes — keep raw GeoJSON around so we can rebuild the timeline
+  // layer (and refill the static layer) on demand.
+  let quakes = null;
   let quakeLayer = null;
-  let timelineLayer = null;
+  // Placeholder timeline layer for the layer-control checkbox. The *real*
+  // timeline layer is built when the user actually toggles it on, so we can
+  // pick window vs cumulative mode based on whether the static layer is also
+  // visible at that moment.
+  let timelinePlaceholder = null;
+  let activeTimeline = null;
   try {
-    const quakes = await loadJSON(API_QUAKES);
+    quakes = await loadJSON(API_QUAKES);
     quakeLayer = buildQuakeLayer(quakes).addTo(map);
-    timelineLayer = buildTimelineLayer(quakes);
+    if (typeof L.Timeline === "function") {
+      timelinePlaceholder = L.layerGroup(); // empty, just for the checkbox
+    }
   } catch (err) {
     console.error("Failed to load USGS quakes:", err);
   }
@@ -240,25 +268,76 @@ function buildPlatesLayer(geojson) {
   const overlays = {};
   if (quakeLayer) overlays["Earthquakes (last 30 days)"] = quakeLayer;
   if (platesLayer) overlays["Tectonic plate boundaries"] = platesLayer;
-  if (timelineLayer) overlays["Timeline scrubber"] = timelineLayer;
+  if (timelinePlaceholder) overlays["Timeline scrubber"] = timelinePlaceholder;
 
-  L.control.layers(baseLayers, overlays, { collapsed: false, position: "topright" }).addTo(map);
+  L.control.layers(baseLayers, overlays, {
+    collapsed: false,
+    position: "topright",
+  }).addTo(map);
 
-  // Timeline scrubber control: only present while the timeline overlay is on.
+  // ----- Timeline behavior -----
+  //
+  // Both "Earthquakes" AND "Timeline scrubber" checked
+  //   → cumulative mode: clear the static dots, then re-fill them in real
+  //     event-time order as the scrubber plays. They stay on screen after
+  //     appearing, so by the end of playback you see the full month again.
+  //
+  // Only "Timeline scrubber" checked
+  //   → window mode: each quake is visible for a 24h sliding window. Reads
+  //     as a wave of activity sweeping through the month.
+  //
+  // Toggling the timeline OFF restores whatever state the static layer was
+  // in (refills it if needed) and removes the scrubber control.
+
   let timelineControl = null;
-  if (timelineLayer && typeof L.timelineSliderControl === "function") {
-    map.on("overlayadd", (e) => {
-      if (e.layer !== timelineLayer) return;
+
+  function showTimeline() {
+    if (!quakes) return;
+    const staticOn = quakeLayer && map.hasLayer(quakeLayer);
+    const mode = staticOn ? "cumulative" : "window";
+
+    // If static is on, empty it so the timeline can repopulate it visually.
+    // We keep the layer on the map (so the checkbox stays checked) but with
+    // no features in it.
+    if (staticOn) quakeLayer.clearLayers();
+
+    activeTimeline = buildTimelineLayer(quakes, mode);
+    activeTimeline.addTo(map);
+
+    if (typeof L.timelineSliderControl === "function") {
       timelineControl = L.timelineSliderControl({
-        formatOutput: (date) => new Date(date).toUTCString().replace(/^\w+, /, ""),
+        duration: 30000, // ~30s to play the full month
+        formatOutput: (date) =>
+          new Date(date).toUTCString().replace(/^\w+, /, ""),
       });
       timelineControl.addTo(map);
-      timelineControl.addTimelines(timelineLayer);
-    });
-    map.on("overlayremove", (e) => {
-      if (e.layer !== timelineLayer || !timelineControl) return;
+      timelineControl.addTimelines(activeTimeline);
+    }
+  }
+
+  function hideTimeline() {
+    if (activeTimeline) {
+      map.removeLayer(activeTimeline);
+      activeTimeline = null;
+    }
+    if (timelineControl) {
       timelineControl.remove();
       timelineControl = null;
+    }
+    // Refill the static layer if it's still checked (so the user gets the
+    // full 30 days back instead of an empty-but-checked overlay).
+    if (quakeLayer && map.hasLayer(quakeLayer) && quakes) {
+      quakeLayer.clearLayers();
+      quakeLayer.addData(quakes);
+    }
+  }
+
+  if (timelinePlaceholder) {
+    map.on("overlayadd", (e) => {
+      if (e.layer === timelinePlaceholder) showTimeline();
+    });
+    map.on("overlayremove", (e) => {
+      if (e.layer === timelinePlaceholder) hideTimeline();
     });
   }
 })();
