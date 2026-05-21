@@ -25,9 +25,21 @@ function magColor(mag) {
   return "#7f1d1d";                // dark red
 }
 
-// Quake-marker radius scales with magnitude (clamped for legibility).
+// Quake-marker radius scales with magnitude.
+//
+// Earthquake energy is roughly proportional to 10^(1.5 * mag), so a one-point
+// jump in magnitude is ~32x more energetic. To make that legible without
+// hiding small events, we scale radius by an exponential of magnitude:
+//
+//   M 2.5 → ~4 px       M 5.5 → ~16 px
+//   M 3.5 → ~6 px       M 6.5 → ~26 px
+//   M 4.5 → ~10 px      M 7.5 → ~42 px
+//
+// A small floor keeps very low-magnitude markers clickable; no upper clamp
+// so the big events really stand out.
 function magRadius(mag) {
-  return Math.max(4, Math.min(28, (mag || 0) * 3.2));
+  const m = Math.max(0, mag || 0);
+  return Math.max(3.5, Math.pow(1.6, m));
 }
 
 const MAG_BINS = [
@@ -122,7 +134,9 @@ function buildLegend() {
     const div = L.DomUtil.create("div", "info legend");
     let html = "<h4>Magnitude</h4>";
     for (const bin of MAG_BINS) {
-      html += `<div class="row"><span class="swatch" style="background:${magColor(bin.value)}"></span>${bin.label}</div>`;
+      const d = Math.min(28, magRadius(bin.value) * 2); // diameter, capped so legend stays tidy
+      const swatch = `width:${d}px;height:${d}px;background:${magColor(bin.value)}`;
+      html += `<div class="row"><span class="swatch" style="${swatch}"></span>${bin.label}</div>`;
     }
     div.innerHTML = html;
     return div;
