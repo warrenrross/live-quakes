@@ -138,6 +138,60 @@ body {
   font-size: 13px;
 }
 
+/* ---- earthquake-view radio control ---- */
+.eq-view-control {
+  background: var(--card);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  border: none;
+  padding: 10px 12px;
+  font-size: 13px;
+  color: var(--ink);
+  min-width: 180px;
+}
+.eq-view-control h4 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.eq-view-control label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  cursor: pointer;
+}
+.eq-view-control input[type="radio"] { margin: 0; cursor: pointer; }
+
+/* ---- timeline mode picker (injected into slider control) ---- */
+.eq-timeline-mode {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+  color: var(--ink);
+}
+.eq-timeline-mode-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+.eq-timeline-mode label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
+  cursor: pointer;
+}
+.eq-timeline-mode input[type="radio"] { margin: 0; cursor: pointer; }
+.eq-timeline-mode .hint { color: var(--muted); font-size: 12px; }
+
 /* ---- attribution ---- */
 .leaflet-control-attribution {
   background: rgba(255,255,255,0.85) !important;

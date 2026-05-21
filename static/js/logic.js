@@ -231,31 +231,63 @@ function buildPlatesLayer(geojson) {
 
 /* ---------- boot ---------- */
 
+/* ---------- Earthquake-view radio control ----------
+ *
+ * One picker, three choices: Static / Timeline / Off.
+ * When "Timeline" is selected, a slider control appears at the bottom
+ * with its own radio group (Moving window / Cumulative) that rebuilds
+ * the timeline in place when toggled.
+ */
+const EarthquakeViewControl = L.Control.extend({
+  options: { position: "topright" },
+  initialize(opts) { L.Util.setOptions(this, opts); this._mode = "static"; },
+  setMode(m) { this._mode = m; this._sync(); this.options.onChange && this.options.onChange(m); },
+  getMode() { return this._mode; },
+  onAdd() {
+    const div = L.DomUtil.create("div", "leaflet-control eq-view-control");
+    L.DomEvent.disableClickPropagation(div);
+    L.DomEvent.disableScrollPropagation(div);
+    div.innerHTML = `
+      <h4>Earthquake view</h4>
+      <label><input type="radio" name="eq-view" value="static" checked /> Static · all 30 days</label>
+      <label><input type="radio" name="eq-view" value="timeline" /> Timeline</label>
+      <label><input type="radio" name="eq-view" value="off" /> Off</label>
+    `;
+    this._div = div;
+    div.querySelectorAll('input[name="eq-view"]').forEach((el) => {
+      L.DomEvent.on(el, "change", () => this.setMode(el.value));
+    });
+    return div;
+  },
+  _sync() {
+    if (!this._div) return;
+    this._div.querySelectorAll('input[name="eq-view"]').forEach((el) => {
+      el.checked = (el.value === this._mode);
+    });
+  },
+});
+
+/* ---------- boot ---------- */
+
 (async function init() {
   const { map, baseLayers } = buildMap();
   buildLegend().addTo(map);
 
-  // Earthquakes — keep raw GeoJSON around so we can rebuild the timeline
-  // layer (and refill the static layer) on demand.
   let quakes = null;
   let quakeLayer = null;
-  // Placeholder timeline layer for the layer-control checkbox. The *real*
-  // timeline layer is built when the user actually toggles it on, so we can
-  // pick window vs cumulative mode based on whether the static layer is also
-  // visible at that moment.
-  let timelinePlaceholder = null;
   let activeTimeline = null;
+  let timelineControl = null;
+  let timelineModeUi = null;       // DOM container injected into the slider control
+  let timelineMode = "window";     // "window" | "cumulative"
+
   try {
     quakes = await loadJSON(API_QUAKES);
-    quakeLayer = buildQuakeLayer(quakes).addTo(map);
-    if (typeof L.Timeline === "function") {
-      timelinePlaceholder = L.layerGroup(); // empty, just for the checkbox
-    }
+    quakeLayer = buildQuakeLayer(quakes); // not added yet — controller decides
   } catch (err) {
     console.error("Failed to load USGS quakes:", err);
   }
 
-  // Tectonic plates
+  // Tectonic plates (still a normal toggle)
   let platesLayer = null;
   try {
     const plates = await loadJSON(API_PLATES);
@@ -264,58 +296,17 @@ function buildPlatesLayer(geojson) {
     console.error("Failed to load tectonic plates:", err);
   }
 
-  // Overlays
+  // Layer control: base maps + (only) the plate overlay.
   const overlays = {};
-  if (quakeLayer) overlays["Earthquakes (last 30 days)"] = quakeLayer;
   if (platesLayer) overlays["Tectonic plate boundaries"] = platesLayer;
-  if (timelinePlaceholder) overlays["Timeline scrubber"] = timelinePlaceholder;
-
   L.control.layers(baseLayers, overlays, {
     collapsed: false,
     position: "topright",
   }).addTo(map);
 
-  // ----- Timeline behavior -----
-  //
-  // Both "Earthquakes" AND "Timeline scrubber" checked
-  //   → cumulative mode: clear the static dots, then re-fill them in real
-  //     event-time order as the scrubber plays. They stay on screen after
-  //     appearing, so by the end of playback you see the full month again.
-  //
-  // Only "Timeline scrubber" checked
-  //   → window mode: each quake is visible for a 24h sliding window. Reads
-  //     as a wave of activity sweeping through the month.
-  //
-  // Toggling the timeline OFF restores whatever state the static layer was
-  // in (refills it if needed) and removes the scrubber control.
+  /* ---------- mode controllers ---------- */
 
-  let timelineControl = null;
-
-  function showTimeline() {
-    if (!quakes) return;
-    const staticOn = quakeLayer && map.hasLayer(quakeLayer);
-    const mode = staticOn ? "cumulative" : "window";
-
-    // If static is on, empty it so the timeline can repopulate it visually.
-    // We keep the layer on the map (so the checkbox stays checked) but with
-    // no features in it.
-    if (staticOn) quakeLayer.clearLayers();
-
-    activeTimeline = buildTimelineLayer(quakes, mode);
-    activeTimeline.addTo(map);
-
-    if (typeof L.timelineSliderControl === "function") {
-      timelineControl = L.timelineSliderControl({
-        duration: 30000, // ~30s to play the full month
-        formatOutput: (date) =>
-          new Date(date).toUTCString().replace(/^\w+, /, ""),
-      });
-      timelineControl.addTo(map);
-      timelineControl.addTimelines(activeTimeline);
-    }
-  }
-
-  function hideTimeline() {
+  function clearTimeline() {
     if (activeTimeline) {
       map.removeLayer(activeTimeline);
       activeTimeline = null;
@@ -323,21 +314,95 @@ function buildPlatesLayer(geojson) {
     if (timelineControl) {
       timelineControl.remove();
       timelineControl = null;
-    }
-    // Refill the static layer if it's still checked (so the user gets the
-    // full 30 days back instead of an empty-but-checked overlay).
-    if (quakeLayer && map.hasLayer(quakeLayer) && quakes) {
-      quakeLayer.clearLayers();
-      quakeLayer.addData(quakes);
+      timelineModeUi = null;
     }
   }
 
-  if (timelinePlaceholder) {
-    map.on("overlayadd", (e) => {
-      if (e.layer === timelinePlaceholder) showTimeline();
-    });
-    map.on("overlayremove", (e) => {
-      if (e.layer === timelinePlaceholder) hideTimeline();
-    });
+  function clearStatic() {
+    if (quakeLayer && map.hasLayer(quakeLayer)) map.removeLayer(quakeLayer);
   }
+
+  function showStatic() {
+    if (!quakeLayer) return;
+    if (!map.hasLayer(quakeLayer)) quakeLayer.addTo(map);
+    // make sure it has all features (in case timeline emptied it earlier)
+    if (quakes) { quakeLayer.clearLayers(); quakeLayer.addData(quakes); }
+  }
+
+  function rebuildTimelineLayer() {
+    // Replace the L.Timeline layer while keeping the slider control,
+    // so toggling Moving window <-> Cumulative feels instant.
+    if (!quakes || !timelineControl) return;
+    if (activeTimeline) map.removeLayer(activeTimeline);
+    activeTimeline = buildTimelineLayer(quakes, timelineMode);
+    if (!activeTimeline) return;
+    activeTimeline.addTo(map);
+    // re-bind to the existing slider control
+    if (typeof timelineControl.addTimelines === "function") {
+      // The plugin doesn't expose a remove API; the simplest reliable
+      // rebind is to recreate the control too.
+      timelineControl.remove();
+      timelineControl = null;
+      timelineModeUi = null;
+      mountTimelineControl();
+    }
+  }
+
+  function mountTimelineControl() {
+    if (typeof L.timelineSliderControl !== "function") return;
+    timelineControl = L.timelineSliderControl({
+      duration: 30000,
+      formatOutput: (date) =>
+        new Date(date).toUTCString().replace(/^\w+, /, ""),
+    });
+    timelineControl.addTo(map);
+    timelineControl.addTimelines(activeTimeline);
+
+    // Inject the mode radio group into the slider control's DOM.
+    const root = timelineControl.getContainer ? timelineControl.getContainer() : null;
+    if (root) {
+      timelineModeUi = L.DomUtil.create("div", "eq-timeline-mode", root);
+      L.DomEvent.disableClickPropagation(timelineModeUi);
+      timelineModeUi.innerHTML = `
+        <div class="eq-timeline-mode-title">Mode</div>
+        <label><input type="radio" name="eq-tl-mode" value="window" ${timelineMode === "window" ? "checked" : ""} /> Moving window <span class="hint">(24 h slice)</span></label>
+        <label><input type="radio" name="eq-tl-mode" value="cumulative" ${timelineMode === "cumulative" ? "checked" : ""} /> Cumulative <span class="hint">(builds up)</span></label>
+      `;
+      timelineModeUi.querySelectorAll('input[name="eq-tl-mode"]').forEach((el) => {
+        L.DomEvent.on(el, "change", () => {
+          timelineMode = el.value;
+          rebuildTimelineLayer();
+        });
+      });
+    }
+  }
+
+  function showTimeline() {
+    if (!quakes) return;
+    clearTimeline();
+    activeTimeline = buildTimelineLayer(quakes, timelineMode);
+    if (!activeTimeline) return;
+    activeTimeline.addTo(map);
+    mountTimelineControl();
+  }
+
+  function applyMode(mode) {
+    if (mode === "static") {
+      clearTimeline();
+      showStatic();
+    } else if (mode === "timeline") {
+      clearStatic();
+      showTimeline();
+    } else { // "off"
+      clearTimeline();
+      clearStatic();
+    }
+  }
+
+  // Mount the radio control and default to Static
+  const viewControl = new EarthquakeViewControl({
+    onChange: (mode) => applyMode(mode),
+  });
+  viewControl.addTo(map);
+  applyMode("static");
 })();
