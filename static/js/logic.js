@@ -5,7 +5,7 @@
  *   - USGS earthquakes (past 30 days, M ≥ 2.5)
  *   - Tectonic plate boundaries (fraxen/tectonicplates)
  *
- * Tiles: CARTO Voyager (free, no API key, attribution-only).
+ * Tiles: Esri Light/Dark Gray + OpenStreetMap (free, no API key, attribution-only).
  */
 
 const API_QUAKES =
@@ -83,35 +83,26 @@ function bindQuakeInteractions(feature, layer) {
 /* ---------- map construction ---------- */
 
 function buildMap() {
-  // Carto Voyager — free, no token, retina-friendly.
-  const voyager = L.tileLayer(
-    "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
-    {
-      maxZoom: 19,
-      attribution:
-        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-      subdomains: "abcd",
-    }
+  // All three basemaps are keyless. (CARTO's public tiles now return an
+  // "API KEY REQUIRED" watermark, so we use OSM + Esri instead.)
+  const osmAttr =
+    '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+  const esriAttr =
+    'Tiles &copy; <a href="https://www.esri.com/">Esri</a> &mdash; Esri, HERE, Garmin, FAO, NOAA, USGS';
+
+  const streets = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+    attribution: osmAttr,
+  });
+
+  const light = L.tileLayer(
+    "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}",
+    { maxZoom: 16, attribution: esriAttr }
   );
 
-  const positron = L.tileLayer(
-    "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
-    {
-      maxZoom: 19,
-      attribution:
-        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-      subdomains: "abcd",
-    }
-  );
-
-  const darkMatter = L.tileLayer(
-    "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
-    {
-      maxZoom: 19,
-      attribution:
-        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-      subdomains: "abcd",
-    }
+  const dark = L.tileLayer(
+    "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",
+    { maxZoom: 16, attribution: esriAttr }
   );
 
   const map = L.map("map-id", {
@@ -120,10 +111,10 @@ function buildMap() {
     minZoom: 2,
     worldCopyJump: true,
     zoomControl: true,
-    layers: [voyager],
+    layers: [light],
   });
 
-  return { map, baseLayers: { Voyager: voyager, Light: positron, Dark: darkMatter } };
+  return { map, baseLayers: { Light: light, Streets: streets, Dark: dark } };
 }
 
 /* ---------- legend ---------- */

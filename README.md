@@ -13,14 +13,14 @@ A real-time visualization of [USGS earthquake data](https://earthquake.usgs.gov/
 - Tooltips on hover; popups on click with the place, time and a deep-link to the USGS event page.
 - Tectonic-plate boundaries from [`fraxen/tectonicplates`](https://github.com/fraxen/tectonicplates) toggleable as an overlay.
 - A timeline scrubber (Leaflet.timeline) you can switch on to watch the last month of seismic activity play back in time order.
-- Three base maps to choose from: CARTO Voyager (default), Positron (light), Dark Matter (dark).
+- Three base maps to choose from: Esri Light Gray (default), OpenStreetMap Streets, Esri Dark Gray.
 
 ## Stack
 
 - Pure HTML, CSS, and ES2020 JavaScript — no build step.
 - [Leaflet 1.9.4](https://leafletjs.com/) for the map.
 - [Leaflet.timeline](https://github.com/skeate/Leaflet.timeline) (bundled in `static/plugins/`) for the timeline scrubber.
-- [CARTO basemaps](https://carto.com/basemaps/) for tiles — free, no API key required, attribution-only.
+- [Esri Canvas](https://www.arcgis.com/home/item.html?id=291da5eab3a0412593b66d384379f89f) and [OpenStreetMap](https://www.openstreetmap.org/) tiles — no API key required, attribution-only. (CARTO's public tiles started requiring a key, so they were dropped.)
 
 > Earlier versions of this project used Mapbox tiles and required an API key in `static/js/config.js`. That dependency has been removed.
 
