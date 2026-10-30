@@ -17,12 +17,12 @@ const API_PLATES =
 
 // Color ramp by magnitude (low → high).
 function magColor(mag) {
-  if (mag < 2.5) return "#a7f3d0"; // light green
-  if (mag < 3.5) return "#fde68a"; // light amber
-  if (mag < 4.5) return "#fdba74"; // orange
-  if (mag < 5.5) return "#f87171"; // red
-  if (mag < 6.5) return "#dc2626"; // strong red
-  return "#7f1d1d";                // dark red
+  if (mag < 2.5) return "#60a5fa"; // blue
+  if (mag < 3.5) return "#818cf8"; // indigo
+  if (mag < 4.5) return "#a855f7"; // purple
+  if (mag < 5.5) return "#dc2626"; // red
+  if (mag < 6.5) return "#ea580c"; // red-orange
+  return "#ff9f1c";                // bright orange
 }
 
 // Quake-marker radius scales with magnitude.
