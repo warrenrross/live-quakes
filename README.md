@@ -9,7 +9,7 @@ A real-time visualization of [USGS earthquake data](https://earthquake.usgs.gov/
 ## Features
 
 - Pulls live data from the USGS GeoJSON feed every time the page is loaded.
-- Circle markers sized and colored by magnitude on a green → red ramp.
+- Circle markers sized and colored by magnitude on a blue → purple → red → orange ramp.
 - Tooltips on hover; popups on click with the place, time and a deep-link to the USGS event page.
 - Tectonic-plate boundaries from [`fraxen/tectonicplates`](https://github.com/fraxen/tectonicplates) toggleable as an overlay.
 - A timeline scrubber (Leaflet.timeline) you can switch on to watch the last month of seismic activity play back in time order.
