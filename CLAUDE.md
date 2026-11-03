@@ -31,7 +31,7 @@ Static Leaflet map of the last 30 days of USGS M≥2.5 earthquakes, with a timel
 | Esri layers max zoom 16 | Note | OSM goes to 19; past zoom 16 Leaflet greys out Light/Dark (expected) |
 | Big events (e.g. 2011 Japan) return 4k+ markers in a ±15 day window | Note | May feel heavy; consider a higher min magnitude if it matters |
 | Legend has no top-right corner | By design | The layers/Earthquake view/timeline panels occupy it |
-| Could not reproduce basemap-switch recenter | Open | Guard added; ask for repro steps if it recurs |
+| Basemap-switch recenter | Resolved 2026-11-03 | Could not be reproduced; user confirmed it doesn't recenter. The `baselayerchange` guard stays as a safety net |
 
 ## Pending Tasks
 1. Optionally clean stale entries from `.gitignore`
