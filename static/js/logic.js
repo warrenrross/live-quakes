@@ -274,6 +274,56 @@ function buildQuakeLayer(geojson) {
  *                   until the end of the data. Reads as the map gradually
  *                   filling in as the month plays out.
  */
+/* Fast cumulative timeline.
+ *
+ * Stock L.Timeline re-matches every displayed marker against every active
+ * feature on each tick (O(n²), plus a fresh getLayers() array per iteration).
+ * In cumulative mode n grows to ~1,500 and playback bogs down. Here every
+ * quake stays visible once it has happened, so the visible set is simply a
+ * prefix of the time-sorted features: binary-search the prefix length and
+ * add/remove only the markers between the old and new position. Marker
+ * layers are created lazily and cached.
+ */
+const CumulativeTimeline = typeof L.Timeline === "function"
+  ? L.Timeline.extend({
+      updateDisplayedLayers() {
+        if (!this._cum) {
+          const feats = (this.options.cumulativeFeatures || [])
+            .filter((f) => f.properties && f.properties.time != null)
+            .sort((a, b) => a.properties.time - b.properties.time);
+          this._cum = {
+            feats,
+            times: feats.map((f) => f.properties.time),
+            layers: new Array(feats.length),
+            shown: 0,
+          };
+        }
+        const c = this._cum;
+        // upper bound: number of quakes with time <= current slider time
+        let lo = 0, hi = c.times.length;
+        while (lo < hi) {
+          const mid = (lo + hi) >> 1;
+          if (c.times[mid] <= this.time) lo = mid + 1; else hi = mid;
+        }
+        while (c.shown < lo) {
+          const i = c.shown++;
+          let layer = c.layers[i];
+          if (!layer) {
+            const f = c.feats[i];
+            layer = L.GeoJSON.geometryToLayer(f, this.options);
+            layer.feature = L.GeoJSON.asFeature(f);
+            if (this.options.onEachFeature) this.options.onEachFeature(f, layer);
+            c.layers[i] = layer;
+          }
+          this.addLayer(layer);
+        }
+        while (c.shown > lo) {
+          this.removeLayer(c.layers[--c.shown]);
+        }
+      },
+    })
+  : null;
+
 function buildTimelineLayer(geojson, mode = "window") {
   if (typeof L.Timeline !== "function") return null;
 
@@ -290,7 +340,9 @@ function buildTimelineLayer(geojson, mode = "window") {
       ? (q) => ({ start: q.properties.time, end: cumulativeEnd })
       : (q) => ({ start: q.properties.time, end: q.properties.time + ONE_DAY });
 
-  return new L.Timeline(geojson, {
+  const Ctor = mode === "cumulative" && CumulativeTimeline ? CumulativeTimeline : L.Timeline;
+  return new Ctor(geojson, {
+    cumulativeFeatures: geojson.features,
     getInterval,
     pointToLayer: (feature, latlng) => {
       const mag = feature.properties.mag || 0;
