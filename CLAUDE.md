@@ -27,15 +27,15 @@ Static Leaflet map of the last 30 days of USGS M≥2.5 earthquakes, with a timel
 | Issue | Status | Notes |
 |-------|--------|-------|
 | CARTO tiles watermarked | Resolved 2026-10-30 | Replaced with Esri/OSM |
-| `.gitignore` lists old `config.js`/`config.py`/`old.js` | Open | Leftovers from the Mapbox era; harmless |
+| `.gitignore` listed old `config.js`/`config.py`/`old.js` | Resolved 2026-11-03 | Removed the Mapbox-era leftovers; the generic Python-template boilerplate below them is still there (irrelevant to this JS project but harmless) |
 | OSM tile usage policy | Note | Fine for light use; switch source if traffic grows |
 | Esri layers max zoom 16 | Note | OSM goes to 19; past zoom 16 Leaflet greys out Light/Dark (expected) |
-| Big events (e.g. 2011 Japan) return 4k+ markers in a ±15 day window | Note | May feel heavy; consider a higher min magnitude if it matters |
+| Big events (e.g. 2011 Japan) return 4k+ markers in a ±15 day window | Note | Tested: plays and renders smoothly, so no marker cap needed (user decision 2026-11-03) |
 | Legend has no top-right corner | By design | The layers/Earthquake view/timeline panels occupy it |
 | Basemap-switch recenter | Resolved 2026-11-03 | Could not be reproduced; user confirmed it doesn't recenter. The `baselayerchange` guard stays as a safety net |
 
 ## Pending Tasks
-1. Optionally clean stale entries from `.gitignore`
+1. Roadmap (not started): for older/slower devices, consider fetching only the current map view's bounding box (FDSN supports `minlatitude`/`maxlatitude`/`minlongitude`/`maxlongitude`) and/or a user-adjustable minimum magnitude for retrieval. Note this interacts with the "never recenter" rule: re-fetch on pan/zoom, don't move the view
 2. Future: compare algorithms. Idea: sort the quake data once at retrieval time (right after fetch / in `loadForDate`) and build everything downstream (static layer, window timeline, cumulative timeline) assuming sorted input, instead of `CumulativeTimeline` sorting privately. Benchmark window mode with the sorted-list/binary-search approach vs the stock interval tree (`ranges.lookup`) before changing it; window mode is already smooth, so only do it if it simplifies code or measurably helps
 
 ## Testing Notes
@@ -48,4 +48,4 @@ Headless Chrome works for visual checks: `puppeteer-core` pointed at `/Applicati
 |------|-----------|
 | 2026-10-30 | Diagnosed "API KEY REQUIRED" map watermark (CARTO), swapped to Esri/OSM tiles; changed quake color ramp to blue/purple/red/orange; pushed to master |
 | 2026-11-02 | Added center-on-date picker (USGS FDSN, ±15 days); made Earthquake view, timeline controls and legend collapsible; legend drags/snaps to corners (ported from World_Coffee_Trade); basemap switch/date load keep current view; restyled timeline box; pushed to master (a5badb2) |
-| 2026-11-03 | Cumulative timeline rewritten as `CumulativeTimeline` (sorted prefix + binary search; ~860x faster); basemap recenter issue closed; noted sort-at-retrieval algorithm comparison as future step |
+| 2026-11-03 | Cumulative timeline rewritten as `CumulativeTimeline` (sorted prefix + binary search; ~860x faster); basemap recenter issue closed; noted sort-at-retrieval algorithm comparison as future step; removed Mapbox-era `.gitignore` entries; roadmapped view-bounds / min-magnitude retrieval for older devices |
