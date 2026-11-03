@@ -242,7 +242,7 @@ body {
 
 /* ---- timeline control: match the other panels, collapse to its title ---- */
 .leaflet-control.leaflet-timeline-control {
-  width: 232px; margin: 0 10px 0 0; box-sizing: border-box;
+  width: 232px; margin: 10px 10px 0 0; box-sizing: border-box;
   padding: 10px 12px; text-align: left;
   background: var(--card); border-radius: 10px; box-shadow: var(--shadow); border: none;
   font-size: 13px; color: var(--ink);
