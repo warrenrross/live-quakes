@@ -110,7 +110,21 @@ body {
 }
 .leaflet-tooltip.quake-tip::before { display: none; }
 
-/* ---- legend ---- */
+/* ---- legend (draggable between corners: br default, bl, tl) ---- */
+.eq-legend {
+  position: absolute;
+  z-index: 1000;
+  right: 12px;
+  bottom: 30px;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+  transition: top .2s, bottom .2s, left .2s, right .2s, box-shadow .15s;
+}
+.eq-legend.leg-bl { right: auto; left: 12px; }
+.eq-legend.leg-tl { right: auto; bottom: auto; left: 12px; top: 96px; }
+.eq-legend.leg-dragging { cursor: grabbing; box-shadow: 0 8px 24px rgba(0,0,0,.28); transition: none; }
+
 .info.legend {
   padding: 10px 12px;
   background: var(--card);
@@ -149,8 +163,18 @@ body {
   color: var(--ink);
   min-width: 180px;
 }
+.eq-view-control .eq-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  cursor: pointer; user-select: none; margin-bottom: 8px;
+}
+.eq-view-control .eq-head:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.eq-view-control .eq-chevron { color: var(--muted); transition: transform .2s; flex: none; }
+.eq-view-control .eq-body { max-height: 400px; overflow: hidden; transition: max-height .25s ease; }
+.eq-view-control.eq-collapsed .eq-head { margin-bottom: 0; }
+.eq-view-control.eq-collapsed .eq-chevron { transform: rotate(-90deg); }
+.eq-view-control.eq-collapsed .eq-body { max-height: 0; }
 .eq-view-control h4 {
-  margin: 0 0 8px;
+  margin: 0;
   font-size: 12px;
   font-weight: 600;
   color: var(--muted);
@@ -199,3 +223,54 @@ body {
   padding: 2px 6px !important;
   border-radius: 6px 0 0 0 !important;
 }
+
+/* ---------- center-on-date picker ---------- */
+.eq-view-control .eq-date { margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(128,128,128,.35); }
+.eq-view-control .eq-date-title { font-weight: 600; font-size: 12px; margin-bottom: 4px; }
+.eq-view-control .eq-date-title .hint { font-weight: 400; opacity: .7; }
+.eq-view-control .eq-date-row { display: flex; gap: 4px; }
+.eq-view-control .eq-date-input { flex: 1; min-width: 0; font: inherit; }
+.eq-view-control .eq-date-row button { font: inherit; cursor: pointer; }
+.eq-view-control .eq-date-status { font-size: 11px; opacity: .75; margin-top: 4px; min-height: 1em; }
+
+/* ---- legend collapse (click the title) ---- */
+.info.legend h4 { display: flex; align-items: center; justify-content: space-between; gap: 12px; cursor: pointer; }
+.info.legend .eq-chevron { color: var(--muted); transition: transform .2s; flex: none; }
+.eq-legend.leg-collapsed .row { display: none; }
+.eq-legend.leg-collapsed h4 { margin-bottom: 0; }
+.eq-legend.leg-collapsed .eq-chevron { transform: rotate(-90deg); }
+
+/* ---- timeline control: match the other panels, collapse to its title ---- */
+.leaflet-control.leaflet-timeline-control {
+  width: 232px; margin: 0 10px 0 0; box-sizing: border-box;
+  padding: 10px 12px; text-align: left;
+  background: var(--card); border-radius: 10px; box-shadow: var(--shadow); border: none;
+  font-size: 13px; color: var(--ink);
+}
+.leaflet-timeline-control h4 { margin: 0; text-align: left; }
+.leaflet-timeline-control h4 b {
+  font-size: 12px; font-weight: 600; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.5px;
+}
+.leaflet-timeline-control .tl-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  cursor: pointer; user-select: none; margin-bottom: 8px;
+}
+.leaflet-timeline-control .eq-chevron { color: var(--muted); transition: transform .2s; flex: none; }
+.leaflet-timeline-control.tl-collapsed .tl-head { margin-bottom: 0; }
+.leaflet-timeline-control.tl-collapsed .eq-chevron { transform: rotate(-90deg); }
+.leaflet-timeline-control.tl-collapsed > *:not(h4) { display: none !important; }
+
+/* timeline control inner layout: [prev][play][next]  date, then full-width slider */
+.leaflet-control.leaflet-timeline-control .sldr-ctrl-container {
+  float: none; width: 100%; display: flex; align-items: center;
+  justify-content: space-between; gap: 8px; margin-bottom: 6px;
+}
+.leaflet-control.leaflet-timeline-control .button-container { display: flex; gap: 4px; flex: none; }
+.leaflet-control.leaflet-timeline-control .button-container button {
+  width: 30px; height: 24px; padding: 0; cursor: pointer;
+  border: 1px solid var(--line); border-radius: 6px; background: #f9fafb;
+}
+.leaflet-control.leaflet-timeline-control .button-container button:hover { background: #eef2f7; }
+.leaflet-control.leaflet-timeline-control .time-text { font-size: 11px; color: var(--muted); text-align: right; line-height: 1.25; }
+.leaflet-control.leaflet-timeline-control input[type=range] { width: 100%; margin: 4px 0 0; display: block; }

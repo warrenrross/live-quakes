@@ -10,6 +10,15 @@
 
 const API_QUAKES =
   "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_month.geojson";
+// USGS FDSN query endpoint, used for "center on date". Max 20,000 events per
+// request; a ±15 day window at M≥2.5 is typically ~1–2k.
+const API_QUERY =
+  "https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&minmagnitude=2.5";
+const HALF_WINDOW_MS = 15 * 86400000;
+const EQ_COLLAPSED_KEY = "live-quakes-eq-collapsed";
+const TL_COLLAPSED_KEY = "live-quakes-tl-collapsed";
+const LEGEND_COLLAPSED_KEY = "live-quakes-legend-collapsed";
+const LEGEND_POS_KEY = "live-quakes-legend-pos";
 const API_PLATES =
   "https://raw.githubusercontent.com/fraxen/tectonicplates/master/GeoJSON/PB2002_boundaries.json";
 
@@ -119,20 +128,116 @@ function buildMap() {
 
 /* ---------- legend ---------- */
 
-function buildLegend() {
-  const legend = L.control({ position: "bottomright" });
-  legend.onAdd = () => {
-    const div = L.DomUtil.create("div", "info legend");
-    let html = "<h4>Magnitude</h4>";
-    for (const bin of MAG_BINS) {
-      const d = Math.min(28, magRadius(bin.value) * 2); // diameter, capped so legend stays tidy
-      const swatch = `width:${d}px;height:${d}px;background:${magColor(bin.value)}`;
-      html += `<div class="row"><span class="swatch" style="${swatch}"></span>${bin.label}</div>`;
+// The legend is a plain absolutely-positioned div inside the map container
+// (not an L.control) so it can be dragged between corners.
+function buildLegend(map) {
+  const div = L.DomUtil.create("div", "info legend eq-legend", map.getContainer());
+  let html = "<h4>Magnitude</h4>";
+  for (const bin of MAG_BINS) {
+    const d = Math.min(28, magRadius(bin.value) * 2); // diameter, capped so legend stays tidy
+    const swatch = `width:${d}px;height:${d}px;background:${magColor(bin.value)}`;
+    html += `<div class="row"><span class="swatch" style="${swatch}"></span>${bin.label}</div>`;
+  }
+  div.innerHTML = html;
+  const h = div.querySelector("h4");
+  h.insertAdjacentHTML("beforeend",
+    '<svg class="eq-chevron" width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">' +
+    '<path d="M3 5l4 4 4-4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>');
+  try { div.classList.toggle("leg-collapsed", localStorage.getItem(LEGEND_COLLAPSED_KEY) === "1"); } catch (_) {}
+  L.DomEvent.disableClickPropagation(div);
+  L.DomEvent.disableScrollPropagation(div);
+  return div;
+}
+
+/* Drag-to-corner (ported from World_Coffee_Trade).
+ *
+ * Corners: br (default), bl, tl. Under 10px of travel snaps back to where it
+ * started; otherwise the dot product of the drag vector against the direction
+ * to each *other* corner picks the winner, so it's scale-invariant.
+ * Position persists in localStorage.
+ */
+function enableLegendDrag(legend, map) {
+  const CLASS = { bl: "leg-bl", tl: "leg-tl" }; // br = base style
+  const THRESHOLD = 10, PAD = 12, TOP_OFFSET = 96; // TOP_OFFSET clears zoom control
+  const container = map.getContainer();
+
+  const getPos = () =>
+    legend.classList.contains("leg-tl") ? "tl" :
+    legend.classList.contains("leg-bl") ? "bl" : "br";
+
+  function applyPos(pos) {
+    legend.classList.remove("leg-bl", "leg-tl");
+    if (CLASS[pos]) legend.classList.add(CLASS[pos]);
+    legend.style.left = legend.style.top = legend.style.right = legend.style.bottom = "";
+  }
+
+  try {
+    const saved = localStorage.getItem(LEGEND_POS_KEY);
+    if (saved === "bl" || saved === "tl") applyPos(saved);
+  } catch (_) {}
+
+  let downTarget = null, dragging = false, startX = 0, startY = 0, grabX = 0, grabY = 0, origin = "br";
+
+  legend.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    const r = legend.getBoundingClientRect();
+    grabX = e.clientX - r.left; grabY = e.clientY - r.top;
+    startX = e.clientX; startY = e.clientY;
+    origin = getPos();
+    downTarget = e.target;
+    dragging = true;
+    legend.classList.add("leg-dragging");
+    legend.setPointerCapture(e.pointerId);
+  });
+
+  legend.addEventListener("pointermove", (e) => {
+    if (!dragging) return;
+    const m = container.getBoundingClientRect();
+    legend.style.left = (e.clientX - m.left - grabX) + "px";
+    legend.style.top = (e.clientY - m.top - grabY) + "px";
+    legend.style.right = "auto";
+    legend.style.bottom = "auto";
+  });
+
+  legend.addEventListener("pointerup", (e) => {
+    if (!dragging) return;
+    dragging = false;
+    legend.classList.remove("leg-dragging");
+    if (Math.hypot(e.clientX - startX, e.clientY - startY) < THRESHOLD) {
+      applyPos(origin);
+      // A tap on the title collapses / expands the legend.
+      if (downTarget && downTarget.closest && downTarget.closest("h4")) {
+        const c = legend.classList.toggle("leg-collapsed");
+        try { localStorage.setItem(LEGEND_COLLAPSED_KEY, c ? "1" : "0"); } catch (_) {}
+      }
+      return;
     }
-    div.innerHTML = html;
-    return div;
-  };
-  return legend;
+    const m = container.getBoundingClientRect();
+    const lw = legend.offsetWidth, lh = legend.offsetHeight;
+    const bottomOff = 30;
+    const anchors = {
+      br: [m.width - PAD - lw / 2, m.height - bottomOff - lh / 2],
+      bl: [PAD + lw / 2,           m.height - bottomOff - lh / 2],
+      tl: [PAD + lw / 2,           TOP_OFFSET + lh / 2],
+    };
+    const dx = e.clientX - startX, dy = e.clientY - startY;
+    const [ox, oy] = anchors[origin];
+    let winner = origin, best = -Infinity;
+    for (const [pos, [ax, ay]] of Object.entries(anchors)) {
+      if (pos === origin) continue;
+      const score = dx * (ax - ox) + dy * (ay - oy);
+      if (score > best) { best = score; winner = pos; }
+    }
+    applyPos(winner);
+    try { localStorage.setItem(LEGEND_POS_KEY, winner); } catch (_) {}
+  });
+
+  legend.addEventListener("pointercancel", () => {
+    if (!dragging) return;
+    dragging = false;
+    legend.classList.remove("leg-dragging");
+    applyPos(origin);
+  });
 }
 
 /* ---------- data loading ---------- */
@@ -239,17 +344,71 @@ const EarthquakeViewControl = L.Control.extend({
     L.DomEvent.disableClickPropagation(div);
     L.DomEvent.disableScrollPropagation(div);
     div.innerHTML = `
-      <h4>Earthquake view</h4>
+      <div class="eq-head" role="button" tabindex="0" aria-expanded="true" title="Collapse / expand">
+        <h4>Earthquake view</h4>
+        <svg class="eq-chevron" width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+          <path d="M3 5l4 4 4-4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <div class="eq-body">
       <label><input type="radio" name="eq-view" value="static" checked /> Static · all 30 days</label>
       <label><input type="radio" name="eq-view" value="timeline" /> Timeline</label>
       <label><input type="radio" name="eq-view" value="off" /> Off</label>
+      <div class="eq-date">
+        <div class="eq-date-title">Center on date <span class="hint">(±15 days, UTC)</span></div>
+        <div class="eq-date-row">
+          <input type="date" class="eq-date-input" min="1900-01-01" />
+          <button type="button" class="eq-date-go">Go</button>
+          <button type="button" class="eq-date-live" title="Back to the last 30 days">Live</button>
+        </div>
+        <div class="eq-date-status" aria-live="polite"></div>
+      </div>
+      </div>
     `;
     this._div = div;
+
+    // Collapse to just the title bar (the timeline slider stays visible).
+    const head = div.querySelector(".eq-head");
+    const toggle = () => this.setCollapsed(!this._collapsed);
+    L.DomEvent.on(head, "click", toggle);
+    L.DomEvent.on(head, "keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); }
+    });
+    let saved = false;
+    try { saved = localStorage.getItem(EQ_COLLAPSED_KEY) === "1"; } catch (_) {}
+    this.setCollapsed(saved, true);
+    const input = div.querySelector(".eq-date-input");
+    input.max = new Date().toISOString().slice(0, 10);
+    this._dateInput = input;
+    this._status = div.querySelector(".eq-date-status");
+    const go = () => {
+      if (!input.value) { this.setStatus("Pick a date first."); return; }
+      this.options.onDate && this.options.onDate(input.value);
+    };
+    L.DomEvent.on(div.querySelector(".eq-date-go"), "click", go);
+    L.DomEvent.on(input, "keydown", (e) => { if (e.key === "Enter") go(); });
+    L.DomEvent.on(div.querySelector(".eq-date-live"), "click", () => {
+      input.value = "";
+      this.options.onDate && this.options.onDate(null);
+    });
     div.querySelectorAll('input[name="eq-view"]').forEach((el) => {
       L.DomEvent.on(el, "change", () => this.setMode(el.value));
     });
     return div;
   },
+  isCollapsed() { return !!this._collapsed; },
+  setCollapsed(c, silent) {
+    this._collapsed = c;
+    if (this._div) {
+      this._div.classList.toggle("eq-collapsed", c);
+      this._div.querySelector(".eq-head").setAttribute("aria-expanded", String(!c));
+    }
+    if (!silent) {
+      try { localStorage.setItem(EQ_COLLAPSED_KEY, c ? "1" : "0"); } catch (_) {}
+    }
+    this.options.onCollapse && this.options.onCollapse(c);
+  },
+  setStatus(msg) { if (this._status) this._status.textContent = msg || ""; },
   _sync() {
     if (!this._div) return;
     this._div.querySelectorAll('input[name="eq-view"]').forEach((el) => {
@@ -262,7 +421,19 @@ const EarthquakeViewControl = L.Control.extend({
 
 (async function init() {
   const { map, baseLayers } = buildMap();
-  buildLegend().addTo(map);
+  const legendEl = buildLegend(map);
+  enableLegendDrag(legendEl, map);
+
+
+  // Switching basemaps must never move the view. Remember the last settled
+  // view and restore it if a layer swap disturbs it.
+  let lastView = { center: map.getCenter(), zoom: map.getZoom() };
+  map.on("moveend", () => { lastView = { center: map.getCenter(), zoom: map.getZoom() }; });
+  map.on("baselayerchange", () => {
+    if (map.getZoom() !== lastView.zoom || !map.getCenter().equals(lastView.center, 1e-6)) {
+      map.setView(lastView.center, lastView.zoom, { animate: false });
+    }
+  });
 
   let quakes = null;
   let quakeLayer = null;
@@ -270,6 +441,8 @@ const EarthquakeViewControl = L.Control.extend({
   let timelineControl = null;
   let timelineModeUi = null;       // DOM container injected into the slider control
   let timelineMode = "window";     // "window" | "cumulative"
+  let timelineCollapsed = false;
+  try { timelineCollapsed = localStorage.getItem(TL_COLLAPSED_KEY) === "1"; } catch (_) {}
 
   try {
     quakes = await loadJSON(API_QUAKES);
@@ -339,6 +512,34 @@ const EarthquakeViewControl = L.Control.extend({
     }
   }
 
+  // Make the plugin's "Controls to Run Timeline" box collapsible to its title.
+  function decorateTimelineControl() {
+    const root = timelineControl && timelineControl.getContainer
+      ? timelineControl.getContainer() : null;
+    const h = root && root.querySelector("h4");
+    if (!h) return;
+    h.classList.add("tl-head");
+    h.setAttribute("role", "button");
+    h.setAttribute("tabindex", "0");
+    h.insertAdjacentHTML("beforeend",
+      '<svg class="eq-chevron" width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">' +
+      '<path d="M3 5l4 4 4-4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>');
+    const apply = () => {
+      root.classList.toggle("tl-collapsed", timelineCollapsed);
+      h.setAttribute("aria-expanded", String(!timelineCollapsed));
+    };
+    const toggle = () => {
+      timelineCollapsed = !timelineCollapsed;
+      try { localStorage.setItem(TL_COLLAPSED_KEY, timelineCollapsed ? "1" : "0"); } catch (_) {}
+      apply();
+    };
+    L.DomEvent.on(h, "click", toggle);
+    L.DomEvent.on(h, "keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); }
+    });
+    apply();
+  }
+
   function mountTimelineControl() {
     if (typeof L.timelineSliderControl !== "function") return;
     timelineControl = L.timelineSliderControl({
@@ -366,6 +567,7 @@ const EarthquakeViewControl = L.Control.extend({
         });
       });
     }
+    decorateTimelineControl();
   }
 
   function showTimeline() {
@@ -391,8 +593,40 @@ const EarthquakeViewControl = L.Control.extend({
   }
 
   // Mount the radio control and default to Static
+  let loadToken = 0; // guards against out-of-order responses
+  async function loadForDate(dateStr) {
+    const token = ++loadToken;
+    const subtitle = document.querySelector(".site-header .subtitle");
+    let url = API_QUAKES;
+    let label = "last 30 days · M ≥ 2.5 · USGS";
+    if (dateStr) {
+      const center = Date.parse(dateStr + "T12:00:00Z");
+      if (isNaN(center)) { viewControl.setStatus("Invalid date."); return; }
+      const start = new Date(center - HALF_WINDOW_MS).toISOString().slice(0, 10);
+      const end = new Date(center + HALF_WINDOW_MS).toISOString().slice(0, 10);
+      url = `${API_QUERY}&starttime=${start}&endtime=${end}&orderby=time-asc`;
+      label = `${start} → ${end} · M ≥ 2.5 · USGS`;
+    }
+    viewControl.setStatus("Loading…");
+    try {
+      const data = await loadJSON(url);
+      if (token !== loadToken) return; // a newer request superseded this one
+      quakes = data;
+      if (!quakeLayer) quakeLayer = buildQuakeLayer(quakes);
+      applyMode(viewControl.getMode());
+      if (subtitle) subtitle.textContent = label;
+      const n = quakes.features.length;
+      viewControl.setStatus(`${n} quake${n === 1 ? "" : "s"} loaded.`);
+    } catch (err) {
+      if (token !== loadToken) return;
+      console.error("Failed to load quakes:", err);
+      viewControl.setStatus("Could not load data for that date.");
+    }
+  }
+
   const viewControl = new EarthquakeViewControl({
     onChange: (mode) => applyMode(mode),
+    onDate: (d) => loadForDate(d),
   });
   viewControl.addTo(map);
   applyMode("static");
