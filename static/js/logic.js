@@ -14,7 +14,11 @@ const API_QUAKES =
 // request; a ±15 day window at M≥2.5 is typically ~1–2k.
 const API_QUERY =
   "https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&minmagnitude=2.5";
+const API_COUNT =
+  "https://earthquake.usgs.gov/fdsnws/event/1/count?format=geojson&minmagnitude=2.5";
 const HALF_WINDOW_MS = 15 * 86400000;
+const GEO_MAX_EVENTS = 20000;
+const KM_PER_DEG = 111.32;
 const EQ_COLLAPSED_KEY = "live-quakes-eq-collapsed";
 const TL_COLLAPSED_KEY = "live-quakes-tl-collapsed";
 const LEGEND_COLLAPSED_KEY = "live-quakes-legend-collapsed";
@@ -80,7 +84,8 @@ function quakePopupHtml(p) {
 function bindQuakeInteractions(feature, layer) {
   const p = feature.properties || {};
   if (p.mag != null && p.place) {
-    layer.bindTooltip(`M ${p.mag.toFixed(1)} — ${p.place}`, {
+    const when = p.time != null ? new Date(p.time).toLocaleDateString() : "";
+    layer.bindTooltip(`M ${p.mag.toFixed(1)} — ${p.place}${when ? `<br>${when}` : ""}`, {
       className: "quake-tip",
       direction: "top",
       offset: [0, -6],
@@ -403,7 +408,7 @@ const EarthquakeViewControl = L.Control.extend({
         </svg>
       </div>
       <div class="eq-body">
-      <label><input type="radio" name="eq-view" value="static" checked /> Static · all 30 days</label>
+      <label><input type="radio" name="eq-view" value="static" checked /> Static · all events</label>
       <label><input type="radio" name="eq-view" value="timeline" /> Timeline</label>
       <label><input type="radio" name="eq-view" value="off" /> Off</label>
       <div class="eq-date">
@@ -414,6 +419,21 @@ const EarthquakeViewControl = L.Control.extend({
           <button type="button" class="eq-date-live" title="Back to the last 30 days">Live</button>
         </div>
         <div class="eq-date-status" aria-live="polite"></div>
+      </div>
+      <div class="eq-date eq-geo">
+        <div class="eq-date-title">Search an area <span class="hint">(box, UTC)</span></div>
+        <div class="eq-date-row">
+          <button type="button" class="eq-geo-drop" title="Then click the map to place the marker">Drop marker</button>
+        </div>
+        <div class="eq-geo-fields">
+          <label>Radius <input type="number" class="eq-geo-radius" min="10" max="2000" step="10" value="300" /> km</label>
+          <label>Last <input type="number" class="eq-geo-months" min="1" max="250" step="1" value="6" /> months</label>
+        </div>
+        <div class="eq-date-row">
+          <button type="button" class="eq-geo-go">Search area</button>
+          <button type="button" class="eq-geo-clear" title="Remove the marker and return to the live feed">Clear</button>
+        </div>
+        <div class="eq-geo-status eq-date-status" aria-live="polite"></div>
       </div>
       </div>
     `;
@@ -446,7 +466,36 @@ const EarthquakeViewControl = L.Control.extend({
     div.querySelectorAll('input[name="eq-view"]').forEach((el) => {
       L.DomEvent.on(el, "change", () => this.setMode(el.value));
     });
+
+    // Geofence search: marker + radius (km) + months.
+    this._geoStatus = div.querySelector(".eq-geo-status");
+    this._geoDrop = div.querySelector(".eq-geo-drop");
+    const radiusEl = div.querySelector(".eq-geo-radius");
+    const monthsEl = div.querySelector(".eq-geo-months");
+    const clamp = (el, lo, hi, dflt) => {
+      let v = parseFloat(el.value);
+      if (!isFinite(v)) v = dflt;
+      v = Math.min(hi, Math.max(lo, v));
+      el.value = v;
+      return v;
+    };
+    this._geoParams = () => ({
+      radiusKm: clamp(radiusEl, 10, 2000, 300),
+      months: Math.round(clamp(monthsEl, 1, 250, 6)),
+    });
+    L.DomEvent.on(this._geoDrop, "click", () => this.options.onGeoArm && this.options.onGeoArm());
+    L.DomEvent.on(div.querySelector(".eq-geo-go"), "click", () =>
+      this.options.onGeoSearch && this.options.onGeoSearch(this._geoParams()));
+    L.DomEvent.on(div.querySelector(".eq-geo-clear"), "click", () =>
+      this.options.onGeoClear && this.options.onGeoClear());
+    L.DomEvent.on(radiusEl, "change", () =>
+      this.options.onGeoRadius && this.options.onGeoRadius(this._geoParams()));
     return div;
+  },
+  getGeoParams() { return this._geoParams(); },
+  setGeoStatus(msg) { if (this._geoStatus) this._geoStatus.textContent = msg || ""; },
+  setGeoArmed(on) {
+    if (this._geoDrop) this._geoDrop.textContent = on ? "Click the map…" : "Drop marker";
   },
   isCollapsed() { return !!this._collapsed; },
   setCollapsed(c, silent) {
@@ -676,9 +725,131 @@ const EarthquakeViewControl = L.Control.extend({
     }
   }
 
+  /* ---------- geofence search ---------- */
+
+  let geoMarker = null;
+  let geoBox = null;
+  let geoArmed = false;
+
+  const wrapLon = (lon) => ((((lon + 180) % 360) + 360) % 360) - 180;
+
+  // Half-width of the box in degrees. Longitude shrinks with cos(lat);
+  // a box that would cross ±180 or a pole is clamped (v1: no wrap-around query).
+  function geoBounds(lat, lon, radiusKm) {
+    const dLat = radiusKm / KM_PER_DEG;
+    const dLon = radiusKm / (KM_PER_DEG * Math.max(Math.cos((lat * Math.PI) / 180), 0.01));
+    const clamped = lon - dLon < -180 || lon + dLon > 180;
+    return {
+      south: Math.max(-90, lat - dLat),
+      north: Math.min(90, lat + dLat),
+      west: Math.max(-180, lon - dLon),
+      east: Math.min(180, lon + dLon),
+      clamped,
+    };
+  }
+
+  function drawGeoBox() {
+    if (!geoMarker) return null;
+    const ll = geoMarker.getLatLng();
+    const b = geoBounds(ll.lat, wrapLon(ll.lng), viewControl.getGeoParams().radiusKm);
+    if (!geoBox) {
+      geoBox = L.rectangle([[b.south, b.west], [b.north, b.east]], {
+        color: "#d9480f", weight: 2, dashArray: "6 4", fill: true, fillOpacity: 0.05,
+        interactive: false,
+      }).addTo(map);
+    } else {
+      geoBox.setBounds([[b.south, b.west], [b.north, b.east]]);
+    }
+    return b;
+  }
+
+  function setGeoArmed(on) {
+    geoArmed = on;
+    viewControl.setGeoArmed(on);
+    map.getContainer().style.cursor = on ? "crosshair" : "";
+  }
+
+  function placeGeoMarker(latlng) {
+    if (!geoMarker) {
+      geoMarker = L.marker(latlng, { draggable: true, keyboard: false, zIndexOffset: 1000 }).addTo(map);
+      geoMarker.on("drag", drawGeoBox);
+      geoMarker.on("dragend", drawGeoBox);
+    } else {
+      geoMarker.setLatLng(latlng);
+    }
+    drawGeoBox();
+  }
+
+  // Only a deliberate "Drop marker" arms the next click, so clicks on quakes
+  // or plates never drop one. Placing a marker never moves the view.
+  // Capture phase so a click that lands on a quake circle (whose popup handler
+  // stops propagation) still places the marker instead of opening a popup.
+  map.getContainer().addEventListener("click", (ev) => {
+    if (!geoArmed) return;
+    if (ev.target.closest(".leaflet-control, .info.legend")) return; // ignore panels
+    ev.stopPropagation();
+    placeGeoMarker(map.mouseEventToLatLng(ev));
+    setGeoArmed(false);
+    viewControl.setGeoStatus("Marker placed. Drag to adjust, then Search area.");
+  }, true);
+
+  async function loadForGeofence({ radiusKm, months }) {
+    if (!geoMarker) { viewControl.setGeoStatus("Drop a marker first."); return; }
+    const token = ++loadToken;
+    const ll = geoMarker.getLatLng();
+    const lat = ll.lat, lon = wrapLon(ll.lng);
+    const b = drawGeoBox();
+    const start = new Date();
+    start.setUTCMonth(start.getUTCMonth() - months);
+    const params =
+      `&minlatitude=${b.south.toFixed(4)}&maxlatitude=${b.north.toFixed(4)}` +
+      `&minlongitude=${b.west.toFixed(4)}&maxlongitude=${b.east.toFixed(4)}` +
+      `&starttime=${start.toISOString().slice(0, 10)}`;
+    viewControl.setGeoStatus("Loading…");
+    try {
+      const { count } = await loadJSON(API_COUNT + params);
+      if (token !== loadToken) return;
+      if (count > GEO_MAX_EVENTS) {
+        viewControl.setGeoStatus(
+          `${count.toLocaleString()} events — over the ${GEO_MAX_EVENTS.toLocaleString()} limit. Reduce the radius or months.`);
+        return;
+      }
+      const data = await loadJSON(`${API_QUERY}${params}&orderby=time-asc`);
+      if (token !== loadToken) return;
+      quakes = data;
+      if (!quakeLayer) quakeLayer = buildQuakeLayer(quakes);
+      applyMode(viewControl.getMode());
+      const subtitle = document.querySelector(".site-header .subtitle");
+      if (subtitle) {
+        subtitle.textContent =
+          `±${radiusKm} km of ${lat.toFixed(2)}, ${lon.toFixed(2)} · last ${months} mo · M ≥ 2.5 · USGS`;
+      }
+      const n = quakes.features.length;
+      viewControl.setGeoStatus(
+        `${n.toLocaleString()} quake${n === 1 ? "" : "s"} in the box.` +
+        (b.clamped ? " (Box clipped at ±180° longitude.)" : ""));
+    } catch (err) {
+      if (token !== loadToken) return;
+      console.error("Geofence load failed:", err);
+      viewControl.setGeoStatus("Could not load data for that area.");
+    }
+  }
+
+  function clearGeofence() {
+    setGeoArmed(false);
+    if (geoMarker) { map.removeLayer(geoMarker); geoMarker = null; }
+    if (geoBox) { map.removeLayer(geoBox); geoBox = null; }
+    viewControl.setGeoStatus("");
+    loadForDate(null);
+  }
+
   const viewControl = new EarthquakeViewControl({
     onChange: (mode) => applyMode(mode),
     onDate: (d) => loadForDate(d),
+    onGeoArm: () => setGeoArmed(!geoArmed),
+    onGeoSearch: (p) => loadForGeofence(p),
+    onGeoClear: () => clearGeofence(),
+    onGeoRadius: () => drawGeoBox(),
   });
   viewControl.addTo(map);
   applyMode("static");

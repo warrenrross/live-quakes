@@ -169,7 +169,7 @@ body {
 }
 .eq-view-control .eq-head:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
 .eq-view-control .eq-chevron { color: var(--muted); transition: transform .2s; flex: none; }
-.eq-view-control .eq-body { max-height: 400px; overflow: hidden; transition: max-height .25s ease; }
+.eq-view-control .eq-body { max-height: 640px; overflow: hidden; transition: max-height .25s ease; }
 .eq-view-control.eq-collapsed .eq-head { margin-bottom: 0; }
 .eq-view-control.eq-collapsed .eq-chevron { transform: rotate(-90deg); }
 .eq-view-control.eq-collapsed .eq-body { max-height: 0; }
@@ -232,6 +232,13 @@ body {
 .eq-view-control .eq-date-input { flex: 1; min-width: 0; font: inherit; }
 .eq-view-control .eq-date-row button { font: inherit; cursor: pointer; }
 .eq-view-control .eq-date-status { font-size: 11px; opacity: .75; margin-top: 4px; min-height: 1em; }
+
+.eq-view-control .eq-geo-fields { margin: 4px 0; }
+.eq-view-control .eq-geo-fields label { padding: 2px 0; cursor: default; }
+.eq-view-control .eq-geo-fields input[type="number"] { width: 64px; font: inherit; }
+.eq-view-control .eq-geo-drop { flex: 1; }
+.eq-view-control .eq-geo-go { flex: 1; }
+.eq-view-control .eq-geo-status { max-width: 220px; }
 
 /* ---- legend collapse (click the title) ---- */
 .info.legend h4 { display: flex; align-items: center; justify-content: space-between; gap: 12px; cursor: pointer; }

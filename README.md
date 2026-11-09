@@ -13,6 +13,7 @@ A real-time visualization of [USGS earthquake data](https://earthquake.usgs.gov/
 - Tooltips on hover; popups on click with the place, time and a deep-link to the USGS event page.
 - Tectonic-plate boundaries from [`fraxen/tectonicplates`](https://github.com/fraxen/tectonicplates) toggleable as an overlay.
 - A timeline scrubber (Leaflet.timeline) you can switch on to watch the last month of seismic activity play back in time order.
+- Geofence search: drop a marker, set a radius (km) and a span in months to load only that bounding box from the USGS FDSN API.
 - Three base maps to choose from: Esri Light Gray (default), OpenStreetMap Streets, Esri Dark Gray.
 
 ## Stack
